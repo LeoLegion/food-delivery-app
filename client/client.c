@@ -34,7 +34,7 @@ int main() {
         int n = recv(sock, buffer, sizeof(buffer) - 1, 0);
         buffer[n] = '\0';
 
-        printf("Server replied: %s", buffer);
+        printf("Server: %s", buffer);
     }
 
     close(sock);
