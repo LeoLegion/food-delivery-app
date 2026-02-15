@@ -8,6 +8,8 @@
 #define PORT 8080
 
 void *handle_client(void *arg);
+void load_users();
+void load_restaurants();
 
 #define MAX_USERS 100
 
@@ -66,6 +68,9 @@ int main() {
 
     printf("Server running on port %d...\n", PORT);
 
+    load_users();
+    load_restaurants();
+
     while (1) {
         client_fd = accept(server_fd,
                            (struct sockaddr *)&client_addr,
@@ -82,6 +87,58 @@ int main() {
     return 0;
 }
 
+void save_users() {
+    FILE *fp = fopen("users.txt", "w");
+    if (!fp) return;
+
+    for (int i = 0; i < user_count; i++) {
+        fprintf(fp, "%s %s", users[i].username, users[i].password);
+    }
+
+    fclose(fp);
+}
+
+void load_users() {
+    FILE *fp = fopen("users.txt", "r");
+    if (!fp) return;
+
+    while (fscanf(fp, "%s %s", users[user_count].username, users[user_count].password) == 2) {
+        user_count++;
+    }
+
+    fclose(fp);
+}
+
+void save_restaurants() {
+    FILE *fp = fopen("restaurants.txt", "w");
+    if (!fp) return;
+
+    for (int i = 0; i < restaurant_count; i++) {
+        fprintf(fp, "%s %d\n", restaurants[i].name, restaurants[i].menu_count);
+
+        for (int j = 0; j < restaurants[i].menu_count; j++) {
+            fprintf(fp, "%s\n", restaurants[i].menu[j]);
+        }
+    }
+
+    fclose(fp);
+}
+
+void load_restaurants() {
+    FILE *fp = fopen("restaurants.txt", "r");
+    if (!fp) return;
+
+    while (fscanf(fp, "%s %d", restaurants[restaurant_count].name, &restaurants[restaurant_count].menu_count) == 2) {
+        for (int j = 0; j < restaurants[restaurant_count].menu_count; j++) {
+            fscanf(fp, "%s", restaurants[restaurant_count].menu[j]);
+        }
+
+        restaurant_count++;
+    }
+
+    fclose(fp);
+}
+
 int add_restaurant(const char *name) {
     pthread_mutex_lock(&restaurant_mutex);
 
@@ -92,6 +149,7 @@ int add_restaurant(const char *name) {
 
     strcpy(restaurants[restaurant_count].name, name);
     restaurant_count++;
+    save_restaurants();
 
     pthread_mutex_unlock(&restaurant_mutex);
     return 1;
@@ -123,6 +181,7 @@ int add_menu_item(const char *restaurant, const char *item) {
 
     strcpy(restaurants[index].menu[restaurants[index].menu_count], item);
     restaurants[index].menu_count++;
+    save_restaurants();
 
     pthread_mutex_unlock(&restaurant_mutex);
     return 1;
@@ -146,6 +205,7 @@ int register_user(const char *username, const char *password) {
     strcpy(users[user_count].username, username);
     strcpy(users[user_count].password, password);
     user_count++;
+    save_users();
 
     pthread_mutex_unlock(&user_mutex);
     return 1;
@@ -164,6 +224,8 @@ int login_user(const char *username, const char *password) {
     pthread_mutex_unlock(&user_mutex);
     return 0;
 }
+
+
 
 void *handle_client(void *arg) {
     int client_fd = *((int *)arg);
