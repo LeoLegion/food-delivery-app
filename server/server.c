@@ -22,9 +22,12 @@ int user_count = 0;
 pthread_mutex_t user_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #define MAX_RESTAURANTS 50
+#define MAX_MENU_ITEMS 20
 
 typedef struct {
     char name[100];
+    char menu[MAX_MENU_ITEMS][100];
+    int menu_count;
 } Restaurant;
 
 Restaurant restaurants[MAX_RESTAURANTS];
@@ -89,6 +92,37 @@ int add_restaurant(const char *name) {
 
     strcpy(restaurants[restaurant_count].name, name);
     restaurant_count++;
+
+    pthread_mutex_unlock(&restaurant_mutex);
+    return 1;
+}
+
+int find_restaurant(const char *name) {
+    for (int i = 0; i < restaurant_count; i++) {
+        if (strcmp(restaurants[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+int add_menu_item(const char *restaurant, const char *item) {
+    
+    pthread_mutex_lock(&restaurant_mutex);
+
+    int index = find_restaurant(restaurant);
+    
+    if (index == -1) {
+        pthread_mutex_unlock(&restaurant_mutex);
+        return -1;
+    }
+
+    if (restaurants[index].menu_count >= MAX_MENU_ITEMS) {
+        pthread_mutex_unlock(&restaurant_mutex);
+        return 0;
+    }
+
+    strcpy(restaurants[index].menu[restaurants[index].menu_count], item);
+    restaurants[index].menu_count++;
 
     pthread_mutex_unlock(&restaurant_mutex);
     return 1;
@@ -247,7 +281,87 @@ void *handle_client(void *arg) {
             }
 
             pthread_mutex_unlock(&restaurant_mutex);
-        } else {
+        } 
+        
+        else if (strcmp(command, "ADD_MENU") == 0) {
+            if (!is_logged_in) {
+                send(client_fd, "LOGIN_REQUIRED\n", 15, 0);
+                continue;
+            }
+
+            if (args < 3) {
+                send(client_fd, "INVALID_FORMAT\n", 15, 0);
+                continue;
+            }
+
+            int result = add_menu_item(arg1, arg2);
+
+            if (result == 1)
+                send(client_fd, "MENU_ADDED\n", 11, 0);
+            else if (result == 0)
+                send(client_fd, "MENU_FULL\n", 10, 0);
+            else
+                send(client_fd, "RESTAURANT_NOT_FOUND\n", 21, 0);
+        }
+
+        else if (strcmp(command, "LIST_MENU") == 0) {
+            if (!is_logged_in) {
+                send(client_fd, "LOGIN_REQUIRED\n", 15, 0);
+                continue;
+            }
+
+            pthread_mutex_lock(&restaurant_mutex);
+
+            int index = find_restaurant(arg1);
+
+            if (index == -1) {
+                send(client_fd, "RESTAURANT_NOT_FOUND\n", 21, 0);
+            } else if (restaurants[index].menu_count == 0) {
+                send(client_fd, "MENU_EMPTY\n", 11, 0);
+            } else {
+                char response[1024] = "";
+                for (int i = 0; i < restaurants[index].menu_count; i++) {
+                    strcat(response, restaurants[index].menu[i]);
+                    strcat(response, "\n");
+                }
+                send(client_fd, response, strlen(response), 0);
+            }
+
+            pthread_mutex_unlock(&restaurant_mutex);
+        }
+
+        else if (strcmp(command, "PLACE_ORDER") == 0) {
+
+            if (!is_logged_in) {
+                send(client_fd, "LOGIN_REQUIRED\n", 15, 0);
+                continue;
+            }
+
+            pthread_mutex_lock(&restaurant_mutex);
+            
+            int index = find_restaurant(arg1);
+
+            if (index == -1) {
+                send(client_fd, "RESTAURANT_NOT_FOUND\n", 21, 0);
+            } else {
+                int found = 0;
+                for (int i = 0; i < restaurants[index].menu_count; i++) {
+                    if (strcmp(restaurants[index].menu[i], arg2) == 0) {
+                        found = 1;
+                        break;
+                    }
+                }
+
+                if (found)
+                    send(client_fd, "ORDER_PLACED\n", 13, 0);
+                else
+                    send(client_fd, "ITEM_NOT_FOUND\n", 15, 0);
+            }
+
+            pthread_mutex_unlock(&restaurant_mutex);
+        }
+
+        else {
             send(client_fd, "INVALID_COMMAND\n", 16, 0);
         }
             
